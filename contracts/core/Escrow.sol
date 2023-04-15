@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -17,12 +17,7 @@ contract Escrow is AccessControlEnumerable {
         FROM_SNS
     }
 
-    struct EscrowData {
-        address payable sender;
-        string senderSnsId;
-        address payable receiver;
-        string receiverSnsId;
-        string hash;
+    struct EscrowInfo {
         uint256 amount;
         address tokenAddress;
         uint256 expiration;
@@ -33,6 +28,19 @@ contract Escrow is AccessControlEnumerable {
         uint256 prevEscrowId;
     }
 
+    struct EscrowParticipants {
+        address payable sender;
+        string senderSnsId;
+        address payable receiver;
+        string receiverSnsId;
+    }
+
+    struct EscrowData {
+        EscrowInfo info;
+        EscrowParticipants participants;
+        string signature;
+    }
+
     mapping(uint256 => EscrowData) public escrows;
 
     constructor() {
@@ -40,181 +48,184 @@ contract Escrow is AccessControlEnumerable {
         _setupRole(RELAYER_ROLE, _msgSender());
     }
 
-    function createEscrowFromHotWallet(
-        string memory senderSnsId,
-        string memory hash,
-        address tokenAddress,
-        uint256 amount,
-        uint256 expiration,
-        string memory wrapperType
-    ) external payable {
-        require(amount > 0, "Deposit amount must be greater than 0.");
+    struct CreateEscrowFromHotWalletInput {
+        string senderSnsId;
+        address tokenAddress;
+        uint256 amount;
+        uint256 expiration;
+        string wrapperType;
+        string signature;
+    }
 
-        if (tokenAddress == address(0)) {
-            require(msg.value == amount, "Incorrect Ether amount sent.");
+
+    function createEscrowFromHotWallet(CreateEscrowFromHotWalletInput memory input) external payable returns (uint256) {
+        require(input.amount > 0, "Deposit amount must be greater than 0.");
+
+        if (input.tokenAddress == address(0)) {
+            require(msg.value == input.amount, "Incorrect Ether amount sent.");
         } else {
             require(msg.value == 0, "Do not send Ether for token transfer.");
-            IERC20(tokenAddress).transferFrom(_msgSender(), address(this), amount);
+            IERC20(input.tokenAddress).transferFrom(_msgSender(), address(this), input.amount);
         }
 
         EscrowData memory newEscrow = EscrowData({
-        sender: payable(_msgSender()),
-        senderSnsId: senderSnsId,
-        receiver: payable(address(0)),
-        receiverSnsId: "",
-        hash: hash,
-        amount: amount,
-        tokenAddress: tokenAddress,
-        expiration: expiration,
+        info: EscrowInfo({
+        amount: input.amount,
+        tokenAddress: input.tokenAddress,
+        expiration: input.expiration,
         isActive: true,
         isClaimed: false,
-        wrapperType: wrapperType,
+        wrapperType: input.wrapperType,
         transactionType: TransactionSource.FROM_HOTWALLET,
         prevEscrowId: 0
+        }),
+        participants: EscrowParticipants({
+        sender: payable(_msgSender()),
+        senderSnsId: input.senderSnsId,
+        receiver: payable(address(0)),
+        receiverSnsId: ""
+        }),
+        signature: input.signature
         });
 
         escrows[escrowCount] = newEscrow;
 
-        escrowCount++;
+        return ++escrowCount;
     }
 
-    // sendviaemail
-    function createEscrowFromSns(uint256 escrowId, uint256 amount) external {
+    function createEscrowFromSns(uint256 escrowId, uint256 amount) external returns (uint256) {
         require(hasRole(RELAYER_ROLE, _msgSender()), "Caller is not a relayer");
 
         EscrowData storage originalEscrow = escrows[escrowId];
-        require(originalEscrow.isActive, "Original escrow is not active");
-        require(originalEscrow.amount >= amount, "Insufficient balance in original escrow");
+        require(originalEscrow.info.isActive, "Original escrow is not active");
+        require(originalEscrow.info.amount >= amount, "Insufficient balance in original escrow");
 
-        originalEscrow.amount -= amount;
-        if (originalEscrow.amount < 1e14) { // If the remaining balance is too small
-            originalEscrow.isActive = false;
+        originalEscrow.info.amount -= amount;
+        if (originalEscrow.info.amount < 1e14) { // If the remaining balance is too small
+            originalEscrow.info.isActive = false;
         }
 
         EscrowData memory newEscrow = EscrowData({
-        sender: payable(_msgSender()),
-        senderSnsId: originalEscrow.senderSnsId,
-        receiver: payable(address(0)),
-        receiverSnsId: "",
-        hash: originalEscrow.hash,
+        info: EscrowInfo({
         amount: amount,
-        tokenAddress: originalEscrow.tokenAddress,
-        expiration: originalEscrow.expiration,
+        tokenAddress: originalEscrow.info.tokenAddress,
+        expiration: originalEscrow.info.expiration,
         isActive: true,
         isClaimed: false,
-        wrapperType: originalEscrow.wrapperType,
+        wrapperType: originalEscrow.info.wrapperType,
         transactionType: TransactionSource.FROM_SNS,
         prevEscrowId: escrowId
+        }),
+        participants: EscrowParticipants({
+        sender: payable(_msgSender()),
+        senderSnsId: originalEscrow.participants.senderSnsId,
+        receiver: payable(address(0)),
+        receiverSnsId: ""
+        }),
+        signature: originalEscrow.signature
         });
 
         escrows[escrowCount] = newEscrow;
-
-        escrowCount++;
+        return ++escrowCount;
     }
 
-    function claim(uint256 escrowId, string memory hash, address receivingAddress) external {
+    function _validateClaim(EscrowData storage escrow, string memory signature) internal view {
+        require(escrow.info.isActive, "Escrow is not active");
+        require(stringsEqual(escrow.signature, signature) , "Invalid signature");
+        require(block.timestamp <= escrow.info.expiration, "Escrow expired");
+    }
+
+    function claim(uint256 escrowId, string memory signature, address receivingAddress) external {
         EscrowData storage escrow = escrows[escrowId];
-        require(escrow.isActive, "Escrow is not active");
-        require(stringsEqual(escrow.hash, hash), "Invalid hash");
-        require(block.timestamp <= escrow.expiration, "Escrow expired");
+        _validateClaim(escrow, signature);
 
-        escrow.isActive = false;
-        escrow.isClaimed = true;
-        escrow.receiver = payable(receivingAddress);
+        escrow.info.isActive = false;
+        escrow.info.isClaimed = true;
+        escrow.participants.receiver = payable(receivingAddress);
 
-        if (escrow.tokenAddress == address(0)) {
-            payable(_msgSender()).transfer(escrow.amount);
+        if (escrow.info.tokenAddress == address(0)) {
+            payable(_msgSender()).transfer(escrow.info.amount);
         } else {
-            IERC20(escrow.tokenAddress).transfer(_msgSender(), escrow.amount);
+            IERC20(escrow.info.tokenAddress).transfer(_msgSender(), escrow.info.amount);
         }
     }
 
 
     function refund(uint256 escrowId) external {
         EscrowData storage escrow = escrows[escrowId];
-        require(escrow.isActive, "Escrow is not active");
-        require(block.timestamp > escrow.expiration, "Escrow has not expired");
+        require(escrow.info.isActive, "Escrow is not active");
+        require(block.timestamp > escrow.info.expiration, "Escrow has not expired");
 
-        if (escrow.transactionType == TransactionSource.FROM_SNS) {
-            EscrowData storage prevEscrow = escrows[escrow.prevEscrowId];
-            prevEscrow.amount += escrow.amount;
-            if (prevEscrow.amount >= 1e14) {
-                prevEscrow.isActive = true;
+        if (escrow.info.transactionType == TransactionSource.FROM_SNS) {
+            EscrowData storage prevEscrow = escrows[escrow.info.prevEscrowId];
+            prevEscrow.info.amount += escrow.info.amount;
+            if (prevEscrow.info.amount >= 1e14) {
+                prevEscrow.info.isActive = true;
             }
         }
 
-        escrow.isActive = false;
+        escrow.info.isActive = false;
 
-        if (escrow.tokenAddress == address(0)) {
-            escrow.sender.transfer(escrow.amount);
+        if (escrow.info.tokenAddress == address(0)) {
+            escrow.participants.sender.transfer(escrow.info.amount);
         } else {
-            IERC20(escrow.tokenAddress).transfer(escrow.sender, escrow.amount);
+            IERC20(escrow.info.tokenAddress).transfer(escrow.participants.sender, escrow.info.amount);
         }
     }
 
     function getEscrowDataByEscrowId(uint256 id) internal view returns (EscrowData memory) {
         require(id >= 0 && id < escrowCount, "Escrow ID does not exist");
-        return escrows[id];
+        EscrowData memory escrowData = escrows[id];
+
+        return EscrowData(escrowData.info, escrowData.participants, "");
     }
 
-    function getEscrowIdByHash(string memory hash) internal view returns (uint256) {
+    function getEscrowIdBySignature(string memory signature) internal view returns (uint256) {
         for (uint256 i = 0; i < escrowCount; i++) {
-            if (stringsEqual(escrows[i].hash, hash)) {
+            if (stringsEqual(escrows[i].signature, signature)) {
                 return i;
             }
         }
         revert("No matching escrow found");
     }
 
-    function getActiveEscrowIdBySnsId(string memory snsId) public view returns (uint256[] memory) {
+    function getEscrowIdsBySnsId(string memory snsId, bool onlyActive) public view returns (uint256[] memory) {
         uint256[] memory matchingIds = new uint256[](escrowCount);
         uint256 index = 0;
         for (uint256 i = 0; i < escrowCount; i++) {
-            if (stringsEqual(escrows[i].receiverSnsId, snsId) && escrows[i].isActive) {
+            if (stringsEqual(escrows[i].participants.receiverSnsId, snsId) && (!onlyActive || escrows[i].info.isActive)) {
                 matchingIds[index] = i;
                 index++;
             }
         }
-        uint256[] memory _escrows = new uint256[](index);
-        for (uint256 i = 0; i < index; i++) {
-            _escrows[i] = matchingIds[i];
-        }
-        return _escrows;
+        return trimArray(matchingIds, index);
     }
 
-    function getAllEscrowIdsBySnsId(string memory snsId) public view returns (uint256[] memory) {
-        uint256[] memory matchingIds = new uint256[](escrowCount);
-        uint256 index = 0;
-        for (uint256 i = 0; i < escrowCount; i++) {
-            if (stringsEqual(escrows[i].receiverSnsId, snsId) && escrows[i].isActive) {
-                matchingIds[index] = i;
-                index++;
-            }
-        }
-        uint256[] memory _escrows = new uint256[](index);
-        for (uint256 i = 0; i < index; i++) {
-            _escrows[i] = matchingIds[i];
-        }
-        return _escrows;
-    }
-
-    function claimAllByHashes(string[] memory hashes, address receivingAddress) external {
-        require(hashes.length > 0, "No hashes provided.");
-        for (uint256 i = 0; i < hashes.length; i++) {
-            uint256 escrowId = getEscrowIdByHash(hashes[i]);
-            this.claim(escrowId, hashes[i], receivingAddress);
+    function claimAllBySignatures(string[] memory signatures, address receivingAddress) external {
+        require(signatures.length > 0, "No signatures provided.");
+        for (uint256 i = 0; i < signatures.length; i++) {
+            uint256 escrowId = getEscrowIdBySignature(signatures[i]);
+            this.claim(escrowId, signatures[i], receivingAddress);
         }
     }
 
-    function refundAllByHashes(string[] memory hashes) external {
-        require(hashes.length > 0, "No hashes provided.");
-        for (uint256 i = 0; i < hashes.length; i++) {
-            uint256 escrowId = getEscrowIdByHash(hashes[i]);
+    function refundAllBySignatures(string[] memory signatures) external {
+        require(signatures.length > 0, "No signatures provided.");
+        for (uint256 i = 0; i < signatures.length; i++) {
+            uint256 escrowId = getEscrowIdBySignature(signatures[i]);
             this.refund(escrowId);
         }
     }
 
     function stringsEqual(string memory a, string memory b) internal pure returns (bool) {
         return keccak256(abi.encodePacked(a)) == keccak256(abi.encodePacked(b));
+    }
+
+    function trimArray(uint256[] memory array, uint256 newSize) private pure returns (uint256[] memory) {
+        uint256[] memory trimmedArray = new uint256[](newSize);
+        for (uint256 i = 0; i < newSize; i++) {
+            trimmedArray[i] = array[i];
+        }
+        return trimmedArray;
     }
 }
