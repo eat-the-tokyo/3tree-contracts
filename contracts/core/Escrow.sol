@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/access/AccessControlEnumerable.sol";
 
-contract ThreeTreeSocialEscrow is AccessControlEnumerable {
+contract ThreeTreeSocialEscrowBuilder is AccessControlEnumerable {
 
     bytes32 public constant RELAYER_ROLE = keccak256("RELAYER_ROLE");
     uint256 private chainId;
