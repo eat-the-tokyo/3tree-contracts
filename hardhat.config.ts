@@ -1,11 +1,12 @@
+import { HardhatUserConfig } from "hardhat/config";
 import "@nomiclabs/hardhat-etherscan";
 import "@nomiclabs/hardhat-waffle";
 import "@typechain/hardhat";
 import "solidity-coverage";
 
-// import * as dotenv from "dotenv";
+import * as dotenv from "dotenv";
 
-import { HardhatUserConfig } from "hardhat/config";
+dotenv.config();
 
 const config: HardhatUserConfig = {
   solidity: {
@@ -21,6 +22,18 @@ const config: HardhatUserConfig = {
     },
   },
   networks : {
+    goerli: {
+      url: `https://goerli.infura.io/v3/12e7deac48dc4dbfb1e4d01316a0dfc4`,
+      accounts: [`${process.env.PRIVATE_KEY}`],
+    },
+    polygon: {
+      url: `https://polygon-mumbai.g.alchemy.com/v2/ePBUX7mISjFQKcGgNAGNYrw5hgb7Ufp9`,
+      accounts: [`${process.env.PRIVATE_KEY}`],
+    },
+    sepolia: {
+      url: `https://eth-sepolia.g.alchemy.com/v2/eMVuHbxeov-wKCtwSpKQlZGpBq3RcmoB`,
+      accounts: [`${process.env.PRIVATE_KEY}`],
+    },
     hardhat: {
       accounts: [
         {
