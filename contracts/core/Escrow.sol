@@ -10,10 +10,7 @@ contract ThreeTreeSocialEscrow is AccessControlEnumerable {
     uint256 private chainId;
 
     //TODO: add Event Emission
-
-    // Ethereum(Seporia) 0
-    //
-
+    
     uint256 private escrowCount;
 
     enum TransactionSource {
