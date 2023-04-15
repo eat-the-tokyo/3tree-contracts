@@ -1489,7 +1489,7 @@ contract ThreeTreeSocialEscrow is AccessControlEnumerable {
         require(input.amount > 0, "Deposit amount must be greater than 0.");
 
         if (input.tokenAddress == address(0)) {
-//            require(msg.value == input.amount, "Incorrect Ether amount sent.");
+            require(msg.value * 1 ether == input.amount, "Incorrect Coin amount sent.");
         } else {
             require(msg.value == 0, "Do not send Ether for token transfer.");
             IERC20(input.tokenAddress).transferFrom(_msgSender(), address(this), input.amount);
