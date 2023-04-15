@@ -5,10 +5,11 @@ async function main() {
 
     console.log("Deploying contracts with the account:", deployer.address);
 
-    const Escrow = await ethers.getContractFactory("EscrowTest");
+    const Escrow = await ethers.getContractFactory("ThreeTreeEscrow");
     const escrow = await Escrow.deploy();
 
-    console.log("Escrow contract address:", escrow.address);
+    console.log("Contract successfully deployed");
+    console.log("ThreeTreeEscrow contract address:", escrow.address);
 }
 
 main()
