@@ -4,13 +4,17 @@ pragma solidity ^0.8.0;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/access/AccessControlEnumerable.sol";
 
-contract Escrow is AccessControlEnumerable {
+contract ThreeTreeSocialEscrow is AccessControlEnumerable {
 
     bytes32 public constant RELAYER_ROLE = keccak256("RELAYER_ROLE");
+    uint256 private chainId;
 
     //TODO: add Event Emission
 
-    uint256 private escrowCount = 0;
+    // Ethereum(Seporia) 0
+    //
+
+    uint256 private escrowCount;
 
     enum TransactionSource {
         FROM_HOTWALLET,
@@ -41,11 +45,13 @@ contract Escrow is AccessControlEnumerable {
         string signature;
     }
 
-    mapping(uint256 => EscrowData) public escrows;
+    mapping(bytes32 => EscrowData) public escrows;
 
     constructor() {
         _setupRole(DEFAULT_ADMIN_ROLE, _msgSender());
         _setupRole(RELAYER_ROLE, _msgSender());
+
+        chainId = block.chainid;
     }
 
     struct CreateEscrowFromHotWalletInput {
@@ -57,8 +63,12 @@ contract Escrow is AccessControlEnumerable {
         string signature;
     }
 
+    function getEscrowCount() public view returns (uint256) {
+        return escrowCount;
+    }
 
-    function createEscrowFromHotWallet(CreateEscrowFromHotWalletInput memory input) external payable returns (uint256) {
+
+    function createEscrowFromHotWallet(CreateEscrowFromHotWalletInput memory input) external payable returns (bytes32) {
         require(input.amount > 0, "Deposit amount must be greater than 0.");
 
         if (input.tokenAddress == address(0)) {
@@ -88,15 +98,16 @@ contract Escrow is AccessControlEnumerable {
         signature: input.signature
         });
 
-        escrows[escrowCount] = newEscrow;
+        bytes32 escrowKey = generateEscrowKey();
+        escrows[escrowKey] = newEscrow;
 
-        return ++escrowCount;
+        return escrowKey;
     }
 
-    function createEscrowFromSns(uint256 escrowId, uint256 amount) external returns (uint256) {
+    function createEscrowFromSnsId(uint256 escrowId, uint256 amount) external returns (bytes32) {
         require(hasRole(RELAYER_ROLE, _msgSender()), "Caller is not a relayer");
 
-        EscrowData storage originalEscrow = escrows[escrowId];
+        EscrowData storage originalEscrow = _getEscrowDataByEscrowCount(escrowId);
         require(originalEscrow.info.isActive, "Original escrow is not active");
         require(originalEscrow.info.amount >= amount, "Insufficient balance in original escrow");
 
@@ -125,8 +136,10 @@ contract Escrow is AccessControlEnumerable {
         signature: originalEscrow.signature
         });
 
-        escrows[escrowCount] = newEscrow;
-        return ++escrowCount;
+        bytes32 escrowKey = generateEscrowKey();
+        escrows[escrowKey] = newEscrow;
+
+        return escrowKey;
     }
 
     function _validateClaim(EscrowData storage escrow, string memory signature) internal view {
@@ -136,7 +149,7 @@ contract Escrow is AccessControlEnumerable {
     }
 
     function claim(uint256 escrowId, string memory signature, address receivingAddress) external {
-        EscrowData storage escrow = escrows[escrowId];
+        EscrowData storage escrow = _getEscrowDataByEscrowCount(escrowId);
         _validateClaim(escrow, signature);
 
         escrow.info.isActive = false;
@@ -152,12 +165,12 @@ contract Escrow is AccessControlEnumerable {
 
 
     function refund(uint256 escrowId) external {
-        EscrowData storage escrow = escrows[escrowId];
+        EscrowData storage escrow = _getEscrowDataByEscrowCount(escrowId);
         require(escrow.info.isActive, "Escrow is not active");
         require(block.timestamp > escrow.info.expiration, "Escrow has not expired");
 
         if (escrow.info.transactionType == TransactionSource.FROM_SNS) {
-            EscrowData storage prevEscrow = escrows[escrow.info.prevEscrowId];
+            EscrowData storage prevEscrow = _getEscrowDataByEscrowCount(escrow.info.prevEscrowId);
             prevEscrow.info.amount += escrow.info.amount;
             if (prevEscrow.info.amount >= 1e14) {
                 prevEscrow.info.isActive = true;
@@ -173,16 +186,22 @@ contract Escrow is AccessControlEnumerable {
         }
     }
 
-    function getEscrowDataByEscrowId(uint256 id) internal view returns (EscrowData memory) {
-        require(id >= 0 && id < escrowCount, "Escrow ID does not exist");
-        EscrowData memory escrowData = escrows[id];
+    function getEscrowDataByEscrowId(bytes32 escrowId) external view returns (EscrowData memory) {
+        EscrowData storage escrowData = escrows[escrowId];
 
         return EscrowData(escrowData.info, escrowData.participants, "");
     }
 
+    function _getEscrowDataByEscrowCount(uint256 count) private view returns (EscrowData storage) {
+        bytes32 escrowKey = _retrieveEscrowKeyFromCount(count);
+        EscrowData storage escrowData = escrows[escrowKey];
+
+        return escrowData;
+    }
+
     function getEscrowIdBySignature(string memory signature) internal view returns (uint256) {
         for (uint256 i = 0; i < escrowCount; i++) {
-            if (stringsEqual(escrows[i].signature, signature)) {
+            if (stringsEqual(_getEscrowDataByEscrowCount(i).signature, signature)) {
                 return i;
             }
         }
@@ -193,7 +212,8 @@ contract Escrow is AccessControlEnumerable {
         uint256[] memory matchingIds = new uint256[](escrowCount);
         uint256 index = 0;
         for (uint256 i = 0; i < escrowCount; i++) {
-            if (stringsEqual(escrows[i].participants.receiverSnsId, snsId) && (!onlyActive || escrows[i].info.isActive)) {
+            EscrowData memory escrow = _getEscrowDataByEscrowCount(i);
+            if (stringsEqual(escrow.participants.receiverSnsId, snsId) && (!onlyActive || escrow.info.isActive)) {
                 matchingIds[index] = i;
                 index++;
             }
@@ -216,6 +236,21 @@ contract Escrow is AccessControlEnumerable {
             this.refund(escrowId);
         }
     }
+
+    function isSignatureMatching(uint256 escrowId, string memory signature) external view returns(bool) {
+        EscrowData memory escrow = _getEscrowDataByEscrowCount(escrowId);
+        return keccak256(abi.encodePacked(escrow.signature)) == keccak256(abi.encodePacked(signature));
+    }
+
+    function generateEscrowKey() internal returns (bytes32) {
+        escrowCount++;
+        return keccak256(abi.encodePacked(chainId, escrowCount));
+    }
+
+    function _retrieveEscrowKeyFromCount(uint256 count) private view returns (bytes32) {
+        return keccak256(abi.encodePacked(chainId, count));
+    }
+
 
     function stringsEqual(string memory a, string memory b) internal pure returns (bool) {
         return keccak256(abi.encodePacked(a)) == keccak256(abi.encodePacked(b));
