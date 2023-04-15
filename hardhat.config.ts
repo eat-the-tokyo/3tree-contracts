@@ -20,6 +20,24 @@ const config: HardhatUserConfig = {
       },
     },
   },
+  networks : {
+    hardhat: {
+      accounts: [
+        {
+          privateKey: "0x0123456789012345678901234567890123456789012345678901234567890123",
+          balance: "1000000000000000000000" // 1000 Ether balance
+        },
+        {
+          privateKey: "0x0123456789012345678901234567890123456789012345678901234567890124",
+          balance: "1000000000000000000000" // 1000 Ether balance
+        },
+        {
+          privateKey: "0x0123456789012345678901234567890123456789012345678901234567890125",
+          balance: "1000000000000000000000" // 1000 Ether balance
+        },
+      ],
+    },
+  }
 };
 
 export default config;
