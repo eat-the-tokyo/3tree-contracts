@@ -1462,7 +1462,7 @@ contract ThreeTreeSocialEscrow is AccessControlEnumerable {
         string signature;
     }
 
-    mapping(bytes32 => EscrowData) public escrows;
+    mapping(bytes32 => EscrowData) private _escrows;
 
     constructor() {
         _setupRole(DEFAULT_ADMIN_ROLE, _msgSender());
@@ -1516,7 +1516,7 @@ contract ThreeTreeSocialEscrow is AccessControlEnumerable {
         });
 
         bytes32 escrowKey = generateEscrowKey();
-        escrows[escrowKey] = newEscrow;
+        _escrows[escrowKey] = newEscrow;
 
         return escrowKey;
     }
@@ -1554,7 +1554,7 @@ contract ThreeTreeSocialEscrow is AccessControlEnumerable {
         });
 
         bytes32 escrowKey = generateEscrowKey();
-        escrows[escrowKey] = newEscrow;
+        _escrows[escrowKey] = newEscrow;
 
         return escrowKey;
     }
@@ -1604,14 +1604,14 @@ contract ThreeTreeSocialEscrow is AccessControlEnumerable {
     }
 
     function getEscrowDataByEscrowId(bytes32 escrowId) external view returns (EscrowData memory) {
-        EscrowData storage escrowData = escrows[escrowId];
+        EscrowData storage escrowData = _escrows[escrowId];
 
         return EscrowData(escrowData.info, escrowData.participants, "");
     }
 
     function _getEscrowDataByEscrowCount(uint256 count) private view returns (EscrowData storage) {
         bytes32 escrowKey = _retrieveEscrowKeyFromCount(count);
-        EscrowData storage escrowData = escrows[escrowKey];
+        EscrowData storage escrowData = _escrows[escrowKey];
 
         return escrowData;
     }
