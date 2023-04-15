@@ -1430,7 +1430,7 @@ contract ThreeTreeSocialEscrow is AccessControlEnumerable {
     uint256 private chainId;
 
     //TODO: add Event Emission
-    
+
     uint256 private escrowCount;
 
     enum TransactionSource {
@@ -1576,7 +1576,7 @@ contract ThreeTreeSocialEscrow is AccessControlEnumerable {
         if (escrow.info.tokenAddress == address(0)) {
             payable(_msgSender()).transfer(escrow.info.amount);
         } else {
-            IERC20(escrow.info.tokenAddress).transfer(_msgSender(), escrow.info.amount);
+            IERC20(escrow.info.tokenAddress).transfer(receivingAddress, escrow.info.amount);
         }
     }
 
