@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -6,6 +7,8 @@ import "@openzeppelin/contracts/access/AccessControlEnumerable.sol";
 contract Escrow is AccessControlEnumerable {
 
     bytes32 public constant RELAYER_ROLE = keccak256("RELAYER_ROLE");
+
+    //TODO: add Event Emission
 
     uint256 private escrowCount = 0;
 
@@ -155,7 +158,7 @@ contract Escrow is AccessControlEnumerable {
     }
 
     function getEscrowIdByHash(string memory hash) internal view returns (uint256) {
-        for (uint256 i = 1; i <= escrowCount; i++) {
+        for (uint256 i = 0; i < escrowCount; i++) {
             if (stringsEqual(escrows[i].hash, hash)) {
                 return i;
             }
@@ -166,7 +169,7 @@ contract Escrow is AccessControlEnumerable {
     function getActiveEscrowIdBySnsId(string memory snsId) public view returns (uint256[] memory) {
         uint256[] memory matchingIds = new uint256[](escrowCount);
         uint256 index = 0;
-        for (uint256 i = 1; i <= escrowCount; i++) {
+        for (uint256 i = 0; i < escrowCount; i++) {
             if (stringsEqual(escrows[i].receiverSnsId, snsId) && escrows[i].isActive) {
                 matchingIds[index] = i;
                 index++;
@@ -182,7 +185,7 @@ contract Escrow is AccessControlEnumerable {
     function getAllEscrowIdsBySnsId(string memory snsId) public view returns (uint256[] memory) {
         uint256[] memory matchingIds = new uint256[](escrowCount);
         uint256 index = 0;
-        for (uint256 i = 1; i <= escrowCount; i++) {
+        for (uint256 i = 0; i < escrowCount; i++) {
             if (stringsEqual(escrows[i].receiverSnsId, snsId) && escrows[i].isActive) {
                 matchingIds[index] = i;
                 index++;
