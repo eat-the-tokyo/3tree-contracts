@@ -2,7 +2,9 @@ pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-contract Escrow {
+import "@opengsn/contracts/src/BaseRelayRecipient.sol";
+
+contract Escrow is BaseRelayRecipient {
     uint256 private escrowCount = 0;
 
     struct EscrowData {
@@ -20,6 +22,9 @@ contract Escrow {
 
     mapping(uint256 => EscrowData) public escrows;
 
+        constructor(address _forwarder) {
+            trustedForwarder = _forwarder;
+        }
 
     function createEscrow(
         string memory email,
@@ -158,4 +163,7 @@ contract Escrow {
         }
     }
 
+        function versionRecipient() external view override returns (string memory) {
+            return "2.0.0";
+        }
 }
